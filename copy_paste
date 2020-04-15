@@ -1,0 +1,61 @@
+import pandas as pd 
+
+old = pd.read_excel('C:\Program Files\excel_test1.xlsx', na_values=['NA'])
+new = pd.read_excel('C:\Program Files\excel_test2.xlsx',  na_values=['NA'])
+old['version'] = "old"
+new['version'] = "new"
+
+old_ID = set(old['ID'])
+new_ID = set(new['ID'])
+
+pominiete_ID = old_ID - new_ID
+dodane_ID = new_ID - old_ID
+
+all_data = pd.concat([old,new],ignore_index=True)
+changes = all_data.drop_duplicates(subset=["ID",
+                                           "BP","OE code",
+                                           "name"
+                                          ], keep='last')
+                                          
+dupe_accts = changes[changes['ID'].duplicated() == True]['ID'].tolist()
+dupes = changes[changes["ID"].isin(dupe_accts)]
+
+
+change_new = dupes[(dupes["version"] == "new")]
+change_old = dupes[(dupes["version"] == "old")]
+
+# Drop the temp columns - we don't need them now
+change_new = change_new.drop(['version'], axis=1)
+change_old = change_old.drop(['version'], axis=1)
+
+# Index on the account numbers
+change_new.set_index('ID', inplace=True)
+change_old.set_index('ID', inplace=True)
+
+# Combine all the changes together
+df_all_changes = pd.concat([change_old, change_new],
+                            axis='columns',
+                            keys=['old', 'new'],
+                            join='outer')
+                            
+                            
+# Define the diff function to show the changes in each field
+def report_diff(x):
+    return x[0] if x[0] == x[1] else '{} ---> {}'.format(*x)
+    
+df_all_changes = df_all_changes.swaplevel(axis='columns')[change_new.columns[0:]]
+
+df_changed = df_all_changes.groupby(level=0, axis=1).apply(lambda frame: frame.apply(report_diff, axis=1))
+df_changed = df_changed.reset_index()
+
+
+df_removed = changes[changes["ID"].isin(pominiete_ID)]
+df_added = changes[changes["ID"].isin(dodane_ID)]
+
+
+#output_columns = ["account number", "name", "street", "city", "state", "postal code"]
+writer = pd.ExcelWriter("my-diff.xlsx")
+df_changed.to_excel(writer,"changed", index=False, columns=output_columns)
+df_removed.to_excel(writer,"removed",index=False, columns=output_columns)
+df_added.to_excel(writer,"added",index=False, columns=output_columns)
+#writer.save()
